@@ -362,6 +362,97 @@
       await saveSettings({ [key]: value });
     }
 
+    // Analyze all test data to get topic stats
+    function analyzeTopicStats(testHistory) {
+      const topicStats = {};
+      (testHistory || []).forEach(test => {
+        (test.words || []).forEach(q => {
+          const topic = q.category || 'unknown';
+          if (!topicStats[topic]) {
+            topicStats[topic] = { correct: 0, total: 0, totalTime: 0, attempts: 0 };
+          }
+          topicStats[topic].total++;
+          topicStats[topic].attempts++;
+          topicStats[topic].totalTime += (q.timeSpent || 0);
+          if (q.correct) topicStats[topic].correct++;
+        });
+      });
+      return topicStats;
+    }
+
+    // Format topic names for display
+    function formatTopicName(topic) {
+      const names = {
+        // Maths
+        'times-tables': 'Times Tables',
+        'addition': 'Addition',
+        'subtraction': 'Subtraction',
+        'division': 'Division',
+        'fractions': 'Fractions',
+        'decimals': 'Decimals',
+        'percentages': 'Percentages',
+        'measurements': 'Measurements',
+        'geometry': 'Geometry',
+        'algebra': 'Algebra',
+        'shapes': 'Shapes',
+        'coordinates': 'Coordinates',
+        'ratio': 'Ratio',
+        'statistics': 'Statistics',
+        // Science
+        'states-of-matter': 'States of Matter',
+        'life-cycles': 'Life Cycles',
+        'human-body': 'Human Body',
+        'forces': 'Forces & Motion',
+        'forces-motion': 'Forces & Motion',
+        'earth-space': 'Earth & Space',
+        'living-things': 'Living Things',
+        'materials': 'Materials',
+        'circulatory': 'Circulatory System',
+        'animals': 'Animals',
+        'plants': 'Plants',
+        'circuits': 'Circuits',
+        'electricity': 'Electricity',
+        'evolution': 'Evolution',
+        'light-shadows': 'Light & Shadows',
+        // History
+        'romans': 'Romans',
+        'anglo-saxons-vikings': 'Anglo-Saxons & Vikings',
+        'tudors': 'Tudors',
+        'stuarts': 'Stuarts',
+        'victorians': 'Victorians',
+        'ww1': 'World War I',
+        'ww2': 'World War II',
+        'ancient-egypt': 'Ancient Egypt',
+        'ancient-greece': 'Ancient Greece',
+        // English
+        'reading': 'Reading',
+        'grammar': 'Grammar',
+        'vocabulary': 'Vocabulary',
+        'tricky': 'Tricky Words',
+        'hard-spellings': 'Hard Spellings',
+        'endings': 'Word Endings',
+        'prefixes': 'Prefixes',
+        'suffixes': 'Suffixes',
+        'compound': 'Compound Words',
+        'double-letters': 'Double Letters',
+        'homophones': 'Homophones',
+        'i-before-e': 'I Before E Rule',
+        'past-tense': 'Past Tense',
+        'plurals': 'Plurals',
+        'silent-letters': 'Silent Letters',
+        'soft-c': 'Soft C Sounds'
+      };
+      return names[topic] || topic.charAt(0).toUpperCase() + topic.slice(1).replace(/-/g, ' ');
+    }
+
+    // Get color class based on accuracy
+    function getAccuracyColor(pct) {
+      if (pct >= 85) return { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300' };
+      if (pct >= 70) return { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300' };
+      if (pct >= 50) return { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300' };
+      return { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300' };
+    }
+
     function renderOverview(data) {
       const spelling = data.spelling || {};
       const maths = data.maths || {};
@@ -372,6 +463,29 @@
       const totalTests = (spelling.testHistory?.length || 0) + (maths.testHistory?.length || 0) +
                          (science.testHistory?.length || 0) + (history.testHistory?.length || 0);
       const badges = data.earnedBadges?.length || 0;
+
+      // Analyze all topics across all subjects
+      const allTopics = [];
+      const subjects = [
+        { name: 'English', data: spelling, color: 'purple' },
+        { name: 'Maths', data: maths, color: 'blue' },
+        { name: 'Science', data: science, color: 'emerald' },
+        { name: 'History', data: history, color: 'amber' }
+      ];
+
+      subjects.forEach(subj => {
+        const stats = analyzeTopicStats(subj.data.testHistory);
+        Object.entries(stats).forEach(([topic, s]) => {
+          const pct = s.total > 0 ? Math.round((s.correct / s.total) * 100) : 0;
+          allTopics.push({ topic, pct, total: s.total, correct: s.correct, subject: subj.name, avgTime: s.total > 0 ? Math.round(s.totalTime / s.total) : 0 });
+        });
+      });
+
+      // Find problem areas (< 70% accuracy, at least 3 attempts)
+      const problemAreas = allTopics.filter(t => t.pct < 70 && t.total >= 3).sort((a, b) => a.pct - b.pct);
+
+      // Find strong areas (> 85% accuracy, at least 5 attempts)
+      const strongAreas = allTopics.filter(t => t.pct >= 85 && t.total >= 5).sort((a, b) => b.pct - a.pct);
 
       return `
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -393,13 +507,82 @@
           </div>
         </div>
 
+        <!-- PROBLEM AREAS - Most Important! -->
+        ${problemAreas.length > 0 ? `
+          <div class="bg-red-50 border-2 border-red-200 rounded-2xl p-6">
+            <h2 class="text-lg font-bold text-red-800 mb-2">Areas Needing Attention</h2>
+            <p class="text-red-600 text-sm mb-4">These topics need more practice (below 70% accuracy)</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              ${problemAreas.slice(0, 6).map(t => `
+                <div class="bg-white rounded-xl p-4 border border-red-200">
+                  <div class="flex justify-between items-start mb-2">
+                    <div>
+                      <span class="font-bold text-gray-800">${formatTopicName(t.topic)}</span>
+                      <span class="text-xs text-gray-500 block">${t.subject}</span>
+                    </div>
+                    <span class="text-2xl font-bold text-red-600">${t.pct}%</span>
+                  </div>
+                  <div class="h-2 bg-red-100 rounded-full overflow-hidden">
+                    <div class="h-full bg-red-500 rounded-full" style="width: ${t.pct}%"></div>
+                  </div>
+                  <p class="text-xs text-gray-500 mt-2">${t.correct}/${t.total} correct</p>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : `
+          <div class="bg-green-50 border-2 border-green-200 rounded-2xl p-6 text-center">
+            <span class="text-4xl">Star</span>
+            <h2 class="text-lg font-bold text-green-800 mt-2">No Problem Areas!</h2>
+            <p class="text-green-600">Alba is doing well across all topics</p>
+          </div>
+        `}
+
+        <!-- STRONG AREAS -->
+        ${strongAreas.length > 0 ? `
+          <div class="bg-green-50 border border-green-200 rounded-2xl p-6">
+            <h2 class="text-lg font-bold text-green-800 mb-2">Strong Areas</h2>
+            <p class="text-green-600 text-sm mb-4">Topics Alba is excelling at (85%+ accuracy)</p>
+            <div class="flex flex-wrap gap-2">
+              ${strongAreas.slice(0, 8).map(t => `
+                <div class="bg-white rounded-lg px-3 py-2 border border-green-200">
+                  <span class="font-semibold text-gray-800">${formatTopicName(t.topic)}</span>
+                  <span class="text-green-600 font-bold ml-2">${t.pct}%</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Subject Overview with Topic Count -->
         <div class="bg-white rounded-2xl p-6">
-          <h2 class="text-lg font-bold text-gray-800 mb-4">Subject Breakdown</h2>
+          <h2 class="text-lg font-bold text-gray-800 mb-4">Subject Overview</h2>
           <div class="space-y-4">
-            ${renderSubjectBar('English', 'purple', spelling.coins || 0, spelling.testHistory?.length || 0)}
-            ${renderSubjectBar('Maths', 'blue', maths.coins || 0, maths.testHistory?.length || 0)}
-            ${renderSubjectBar('Science', 'emerald', science.coins || 0, science.testHistory?.length || 0)}
-            ${renderSubjectBar('History', 'amber', history.coins || 0, history.testHistory?.length || 0)}
+            ${subjects.map(subj => {
+              const stats = analyzeTopicStats(subj.data.testHistory);
+              const topicCount = Object.keys(stats).length;
+              const totalQ = Object.values(stats).reduce((sum, s) => sum + s.total, 0);
+              const correctQ = Object.values(stats).reduce((sum, s) => sum + s.correct, 0);
+              const avgPct = totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0;
+              const color = getAccuracyColor(avgPct);
+              return `
+                <div class="p-4 rounded-xl ${color.bg} border ${color.border}">
+                  <div class="flex justify-between items-center mb-2">
+                    <div>
+                      <span class="font-bold text-gray-800">${subj.name}</span>
+                      <span class="text-xs text-gray-500 ml-2">${topicCount} topics practiced</span>
+                    </div>
+                    <div class="text-right">
+                      <span class="text-2xl font-bold ${color.text}">${avgPct}%</span>
+                      <span class="text-xs text-gray-500 block">${correctQ}/${totalQ} questions</span>
+                    </div>
+                  </div>
+                  <div class="h-2 bg-white/50 rounded-full overflow-hidden">
+                    <div class="h-full ${avgPct >= 85 ? 'bg-green-500' : avgPct >= 70 ? 'bg-blue-500' : avgPct >= 50 ? 'bg-amber-500' : 'bg-red-500'} rounded-full" style="width: ${avgPct}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
           </div>
         </div>
 
@@ -465,22 +648,32 @@
       const coins = subjectData.coins || 0;
       const totalTests = tests.length;
       const perfectTests = tests.filter(t => t.score === t.total).length;
-      const avgScore = totalTests > 0 ? tests.reduce((sum, t) => sum + (t.score / t.total), 0) / totalTests * 100 : 0;
 
-      const wordStats = subjectData.wordStats || {};
-      const problemAreas = Object.entries(wordStats)
-        .filter(([_, stats]) => stats.attempts > 0 && (stats.correct / stats.attempts) < 0.5)
-        .sort((a, b) => (a[1].correct / a[1].attempts) - (b[1].correct / b[1].attempts))
-        .slice(0, 10);
+      // Analyze by TOPIC (not just wordStats)
+      const topicStats = analyzeTopicStats(tests);
+      const totalQ = Object.values(topicStats).reduce((sum, s) => sum + s.total, 0);
+      const correctQ = Object.values(topicStats).reduce((sum, s) => sum + s.correct, 0);
+      const avgScore = totalQ > 0 ? Math.round((correctQ / totalQ) * 100) : 0;
 
-      const needsPractice = Object.entries(wordStats)
-        .filter(([_, stats]) => {
-          const acc = stats.attempts > 0 ? stats.correct / stats.attempts : 1;
-          return acc >= 0.5 && acc < 0.75;
-        })
-        .slice(0, 10);
+      // Sort topics by performance
+      const topicArray = Object.entries(topicStats).map(([topic, stats]) => ({
+        topic,
+        pct: stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0,
+        correct: stats.correct,
+        total: stats.total,
+        avgTime: stats.total > 0 ? Math.round(stats.totalTime / stats.total) : 0
+      })).sort((a, b) => a.pct - b.pct);
+
+      // Categories
+      const problemTopics = topicArray.filter(t => t.pct < 70 && t.total >= 2);
+      const goodTopics = topicArray.filter(t => t.pct >= 70 && t.pct < 85 && t.total >= 2);
+      const excellentTopics = topicArray.filter(t => t.pct >= 85 && t.total >= 2);
+
+      // Find slowest topics (confusion indicator)
+      const slowTopics = [...topicArray].filter(t => t.total >= 3).sort((a, b) => b.avgTime - a.avgTime).slice(0, 3);
 
       return `
+        <!-- Stats Cards -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div class="bg-white rounded-2xl p-4">
             <p class="text-3xl font-bold text-${color}-600">${Math.round(coins)}</p>
@@ -495,58 +688,124 @@
             <p class="text-sm text-gray-500">Perfect Scores</p>
           </div>
           <div class="bg-white rounded-2xl p-4">
-            <p class="text-3xl font-bold text-blue-600">${avgScore.toFixed(0)}%</p>
-            <p class="text-sm text-gray-500">Avg Accuracy</p>
+            <p class="text-3xl font-bold ${avgScore >= 85 ? 'text-green-600' : avgScore >= 70 ? 'text-blue-600' : avgScore >= 50 ? 'text-amber-600' : 'text-red-600'}">${avgScore}%</p>
+            <p class="text-sm text-gray-500">Overall Accuracy</p>
           </div>
         </div>
 
-        ${problemAreas.length > 0 ? `
-          <div class="bg-red-50 border border-red-200 rounded-2xl p-6">
-            <h3 class="text-lg font-bold text-red-800 mb-4">⚠️ Problem Areas (< 50%)</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              ${problemAreas.map(([word, stats]) => {
-                const acc = Math.round((stats.correct / stats.attempts) * 100);
+        <!-- TOPIC BREAKDOWN - The Main Event! -->
+        <div class="bg-white rounded-2xl p-6">
+          <h3 class="text-lg font-bold text-gray-800 mb-4">Topic Performance</h3>
+          ${topicArray.length > 0 ? `
+            <div class="space-y-3">
+              ${topicArray.map(t => {
+                const color = getAccuracyColor(t.pct);
                 return `
-                  <div class="flex justify-between items-center p-2 bg-white rounded-lg">
-                    <span class="font-medium text-gray-800">${word}</span>
-                    <span class="text-red-600 font-bold">${acc}%</span>
+                  <div class="p-3 rounded-xl ${color.bg} border ${color.border}">
+                    <div class="flex justify-between items-center mb-1">
+                      <span class="font-semibold text-gray-800">${formatTopicName(t.topic)}</span>
+                      <div class="text-right">
+                        <span class="text-xl font-bold ${color.text}">${t.pct}%</span>
+                        <span class="text-xs text-gray-500 ml-2">(${t.correct}/${t.total})</span>
+                      </div>
+                    </div>
+                    <div class="h-2 bg-white/50 rounded-full overflow-hidden">
+                      <div class="h-full ${t.pct >= 85 ? 'bg-green-500' : t.pct >= 70 ? 'bg-blue-500' : t.pct >= 50 ? 'bg-amber-500' : 'bg-red-500'} rounded-full transition-all" style="width: ${t.pct}%"></div>
+                    </div>
                   </div>
                 `;
               }).join('')}
             </div>
-          </div>
-        ` : ''}
+          ` : '<p class="text-gray-500 text-center py-4">No topic data yet - complete some tests first!</p>'}
+        </div>
 
-        ${needsPractice.length > 0 ? `
-          <div class="bg-yellow-50 border border-yellow-200 rounded-2xl p-6">
-            <h3 class="text-lg font-bold text-yellow-800 mb-4">📝 Needs Practice (50-75%)</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              ${needsPractice.map(([word, stats]) => {
-                const acc = Math.round((stats.correct / stats.attempts) * 100);
-                return `
-                  <div class="flex justify-between items-center p-2 bg-white rounded-lg">
-                    <span class="font-medium text-gray-800">${word}</span>
-                    <span class="text-yellow-600 font-bold">${acc}%</span>
+        <!-- Problem Areas with Tips -->
+        ${problemTopics.length > 0 ? `
+          <div class="bg-red-50 border-2 border-red-200 rounded-2xl p-6">
+            <h3 class="text-lg font-bold text-red-800 mb-2">Topics Needing Practice</h3>
+            <p class="text-sm text-red-600 mb-4">Focus extra time on these topics (below 70%)</p>
+            <div class="space-y-3">
+              ${problemTopics.map(t => `
+                <div class="bg-white rounded-xl p-4 border border-red-200">
+                  <div class="flex justify-between items-center mb-2">
+                    <span class="font-bold text-gray-800">${formatTopicName(t.topic)}</span>
+                    <span class="text-2xl font-bold text-red-600">${t.pct}%</span>
                   </div>
-                `;
-              }).join('')}
+                  <div class="h-2 bg-red-100 rounded-full overflow-hidden mb-2">
+                    <div class="h-full bg-red-500 rounded-full" style="width: ${t.pct}%"></div>
+                  </div>
+                  <p class="text-sm text-gray-600">
+                    ${t.pct < 50 ? 'Consider reviewing basics together' : 'A bit more practice should help'}
+                    • ${t.correct}/${t.total} correct so far
+                  </p>
+                </div>
+              `).join('')}
             </div>
           </div>
         ` : ''}
 
+        <!-- Topics Taking Longest (Confusion Indicator) -->
+        ${slowTopics.length > 0 && slowTopics[0].avgTime > 30 ? `
+          <div class="bg-amber-50 border border-amber-200 rounded-2xl p-6">
+            <h3 class="text-lg font-bold text-amber-800 mb-2">Taking Longer</h3>
+            <p class="text-sm text-amber-600 mb-4">These topics take more time (may indicate uncertainty)</p>
+            <div class="flex flex-wrap gap-2">
+              ${slowTopics.map(t => `
+                <div class="bg-white rounded-lg px-4 py-2 border border-amber-200">
+                  <span class="font-semibold text-gray-800">${formatTopicName(t.topic)}</span>
+                  <span class="text-amber-600 text-sm ml-2">~${t.avgTime}s avg</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Strong Topics -->
+        ${excellentTopics.length > 0 ? `
+          <div class="bg-green-50 border border-green-200 rounded-2xl p-6">
+            <h3 class="text-lg font-bold text-green-800 mb-2">Excellent Topics!</h3>
+            <p class="text-sm text-green-600 mb-4">Alba is doing great in these areas (85%+)</p>
+            <div class="flex flex-wrap gap-2">
+              ${excellentTopics.map(t => `
+                <div class="bg-white rounded-lg px-3 py-2 border border-green-200">
+                  <span class="font-semibold text-gray-800">${formatTopicName(t.topic)}</span>
+                  <span class="text-green-600 font-bold ml-2">${t.pct}%</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Recent Tests with Topic Details -->
         <div class="bg-white rounded-2xl p-6">
           <h3 class="text-lg font-bold text-gray-800 mb-4">Recent ${name} Tests</h3>
           ${tests.length > 0 ? `
-            <div class="space-y-2">
-              ${tests.slice(-10).reverse().map(t => `
-                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                  <span class="text-gray-600">${t.date || 'Unknown'}</span>
-                  <div>
-                    <span class="font-bold ${t.score === t.total ? 'text-green-500' : 'text-gray-700'}">${t.score}/${t.total}</span>
-                    <span class="text-yellow-500 ml-2">+${t.coinsEarned || 0}</span>
+            <div class="space-y-3">
+              ${tests.slice(-8).reverse().map(t => {
+                const testTopics = {};
+                (t.words || []).forEach(w => {
+                  const cat = w.category || 'general';
+                  if (!testTopics[cat]) testTopics[cat] = { correct: 0, total: 0 };
+                  testTopics[cat].total++;
+                  if (w.correct) testTopics[cat].correct++;
+                });
+                const topicSummary = Object.entries(testTopics).map(([topic, s]) =>
+                  `${formatTopicName(topic)}: ${s.correct}/${s.total}`
+                ).join(' • ');
+
+                return `
+                  <div class="p-4 bg-gray-50 rounded-xl">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-gray-600">${t.date || 'Unknown'}</span>
+                      <div>
+                        <span class="font-bold ${t.score === t.total ? 'text-green-500' : t.score >= t.total * 0.7 ? 'text-blue-500' : 'text-amber-500'}">${t.score}/${t.total}</span>
+                        <span class="text-yellow-500 ml-2">+${t.coinsEarned || 0}</span>
+                      </div>
+                    </div>
+                    <p class="text-xs text-gray-500">${topicSummary}</p>
                   </div>
-                </div>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           ` : '<p class="text-gray-500 text-center py-4">No tests yet</p>'}
         </div>
